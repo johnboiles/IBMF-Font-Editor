@@ -12,32 +12,48 @@ BitmapRenderer::BitmapRenderer(QWidget *parent, int pixel_size)
   editable = true;
 }
 
-void BitmapRenderer::connect_to(BitmapRenderer * renderer)
+void BitmapRenderer::connectTo(BitmapRenderer * main_renderer)
 {
-  QObject::connect(renderer, &BitmapRenderer::bitmapHasChanged, this, &BitmapRenderer::loadBitmap);
-  QObject::connect(renderer, &BitmapRenderer::bitmapCleared,    this, &BitmapRenderer::clear_and_repaint);
+  QObject::connect(main_renderer, &BitmapRenderer::bitmapHasChanged, this, &BitmapRenderer::clearAndLoadBitmap);
+  QObject::connect(main_renderer, &BitmapRenderer::bitmapCleared,    this, &BitmapRenderer::clear_and_repaint);
   editable = false;
 }
 
-void BitmapRenderer::clear_and_repaint()
+void BitmapRenderer::clearBitmap()
 {
   for (int row = 0; row < BITMAP_HEIGHT; row++) {
     for (int col = 0; col < BITMAP_WIDTH; col++) {
       displayBitmap[col][row] = 0;
     }
   }
+}
+
+void BitmapRenderer::clear_and_repaint()
+{
+  clearBitmap();
   this->repaint();
 }
 
 void BitmapRenderer::clear(bool repaint_after)
 {
-  for (int row = 0; row < BITMAP_HEIGHT; row++) {
-    for (int col = 0; col < BITMAP_WIDTH; col++) {
-      displayBitmap[col][row] = 0;
-    }
-  }
+  clearBitmap();
   if (repaint_after) this->repaint();
   emit this->bitmapCleared();
+}
+
+void BitmapRenderer::resizing() {
+  uint8_t * bitmap;
+  Dim dim;
+
+  if (retrieveBitmap(&bitmap, &dim)) {
+    clearBitmap();
+    loadBitmap(bitmap, dim);
+    delete [] bitmap;
+  }
+  else {
+    this->repaint();
+  }
+
 }
 
 void BitmapRenderer::setPixelSize(int pixel_size)
@@ -47,7 +63,7 @@ void BitmapRenderer::setPixelSize(int pixel_size)
 
   pixelSize = pixel_size;
   if (retrieveBitmap(&bitmap, &dim)) {
-    loadBitmap(bitmap, dim);
+    clearAndLoadBitmap(bitmap, dim);
     delete [] bitmap;
   }
   else {
@@ -157,10 +173,14 @@ void BitmapRenderer::mouseMoveEvent(QMouseEvent *event)
   }
 }
 
-void BitmapRenderer::loadBitmap(uint8_t * bitmap, Dim dim)
+void BitmapRenderer::clearAndLoadBitmap(uint8_t * bitmap, Dim dim)
 {
   clear();
+  loadBitmap(bitmap, dim);
+}
 
+void BitmapRenderer::loadBitmap(uint8_t * bitmap, Dim dim)
+{
   Dim screen(width() / pixelSize, height() / pixelSize);
   Pos pos((screen.width - dim.width) / 2, (screen.height - dim.height) / 2);
 
@@ -195,8 +215,8 @@ void BitmapRenderer::loadBitmap(uint8_t * bitmap, Dim dim)
 
 bool BitmapRenderer::retrieveBitmap(uint8_t ** bitmap, Dim * dim)
 {
-  Pos top_left;
-  Pos bottom_right;
+  Pos topLeft;
+  Pos bottomRight;
 
   int row;
   int col;
@@ -212,7 +232,7 @@ bool BitmapRenderer::retrieveBitmap(uint8_t ** bitmap, Dim * dim)
 
   if (row >= BITMAP_HEIGHT) return false; // The bitmap is empty of black pixels
 
-  top_left.y = row;
+  topLeft.y = row;
 
   stop = false;
   for (row = BITMAP_HEIGHT - 1; row >= 0; row--) {
@@ -222,7 +242,7 @@ bool BitmapRenderer::retrieveBitmap(uint8_t ** bitmap, Dim * dim)
     }
     if (stop) break;
   }
-  bottom_right.y = row;
+  bottomRight.y = row;
 
   stop = false;
   for (col = 0; col < BITMAP_WIDTH; col++) {
@@ -232,7 +252,7 @@ bool BitmapRenderer::retrieveBitmap(uint8_t ** bitmap, Dim * dim)
     }
     if (stop) break;
   }
-  top_left.x = col;
+  topLeft.x = col;
 
   stop = false;
   for (col = BITMAP_WIDTH - 1; col >= 0; col--) {
@@ -242,15 +262,15 @@ bool BitmapRenderer::retrieveBitmap(uint8_t ** bitmap, Dim * dim)
     }
     if (stop) break;
   }
-  bottom_right.x = col;
+  bottomRight.x = col;
 
-  Dim theDim = Dim(bottom_right.x - top_left.x + 1, bottom_right.y - top_left.y + 1);
+  Dim theDim = Dim(bottomRight.x - topLeft.x + 1, bottomRight.y - topLeft.y + 1);
   int size   = theDim.width * theDim.height;
   uint8_t * theBitmap = new uint8_t[size];
 
   int idx = 0;
-  for (row = top_left.y; row <= bottom_right.y; row++) {
-    for (col = top_left.x; col <= bottom_right.x; col++) {
+  for (row = topLeft.y; row <= bottomRight.y; row++) {
+    for (col = topLeft.x; col <= bottomRight.x; col++) {
       theBitmap[idx] = displayBitmap[col][row] == 0 ? 0 : 0xff;
       idx += 1;
     }

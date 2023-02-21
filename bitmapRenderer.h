@@ -24,10 +24,11 @@ public:
     void clear(bool repaint_after = false);
     bool changed() { return bitmapChanged; }
     void setPixelSize(int pixel_size);
-    void connect_to(BitmapRenderer * renderer);
+    void connectTo(BitmapRenderer * renderer);
+    void resizing();
 
 public slots:
-    void loadBitmap(uint8_t * bitmap, Dim dim);
+    void clearAndLoadBitmap(uint8_t * bitmap, Dim dim);
     void clear_and_repaint();
 
 signals:
@@ -41,6 +42,8 @@ protected:
 
 private:
     void setPixel(QPoint pos);
+    void loadBitmap(uint8_t * bitmap, Dim dim);
+    void clearBitmap();
     Dim  bitmapDim;
     Pos  bitmapPos;
     bool bitmapChanged;

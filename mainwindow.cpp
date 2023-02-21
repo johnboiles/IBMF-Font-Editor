@@ -7,10 +7,14 @@ MainWindow::MainWindow(QWidget *parent)
 {
   initialized = false;
   ui->setupUi(this);
+
   currentFilename = "";
-  fontChanged = false;
-  glyphChanged = false;
-  faceChanged = false;
+  fontChanged     = false;
+  glyphChanged    = false;
+  faceChanged     = false;
+  glyphReloading  = false;
+  faceReloading   = false;
+
   setWindowTitle("IBMF Font Editor");
 
   bitmapRenderer = new BitmapRenderer;
@@ -21,15 +25,15 @@ MainWindow::MainWindow(QWidget *parent)
   smallGlyph = new BitmapRenderer;
   smallGlyph->setPixelSize(2);
   ui->smallGlyphPreview->layout()->addWidget(smallGlyph);
-  smallGlyph->connect_to(bitmapRenderer);
+  smallGlyph->connectTo(bitmapRenderer);
 
   largeGlyph = new BitmapRenderer;
   largeGlyph->setPixelSize(4);
   ui->largeGlyphPreview->layout()->addWidget(largeGlyph);
-  largeGlyph->connect_to(bitmapRenderer);
+  largeGlyph->connectTo(bitmapRenderer);
 
-  ibmf_font = nullptr;
-  ibmf_glyph_code = 0;
+  ibmfFont = nullptr;
+  ibmfGlyphCode = 0;
 
   // All captions in the tables are not editable
   for (int row = 0; row < ui->fontHeader->rowCount(); row++) {
@@ -97,12 +101,12 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
-  bitmapRenderer->setPixelSize(ui->pixelSize->value());
+  bitmapRenderer->resizing();
 }
 
 void MainWindow::bitmapChanged(uint8_t * bitmap, Dim dim)
 {
-  if (ibmf_font != nullptr) {
+  if (ibmfFont != nullptr) {
     fontChanged = true;
     glyphChanged = true;
   }
@@ -195,25 +199,25 @@ bool MainWindow::loadFont()
 {
   QByteArray content = file.readAll();
   file.close();
-  if (ibmf_font != nullptr) {
-    delete ibmf_font;
-    ibmf_font = nullptr;
+  if (ibmfFont != nullptr) {
+    delete ibmfFont;
+    ibmfFont = nullptr;
   }
-  ibmf_font = new IBMFFont((uint8_t *) content.data(), content.size());
-  if (ibmf_font->is_initialized()) {
-    ibmf_preamble = ibmf_font->get_preample();
+  ibmfFont = new IBMFFont((uint8_t *) content.data(), content.size());
+  if (ibmfFont->is_initialized()) {
+    ibmfPreamble = ibmfFont->get_preample();
 
     char marker[5];
-    memcpy(marker, ibmf_preamble->marker, 4);
+    memcpy(marker, ibmfPreamble->marker, 4);
     marker[4] = 0;
 
     putValue(ui->fontHeader, 0, 1, marker,                       false);
-    putValue(ui->fontHeader, 1, 1, ibmf_preamble->face_count,    false);
-    putValue(ui->fontHeader, 2, 1, ibmf_preamble->bits.version,  false);
-    putValue(ui->fontHeader, 3, 1, ibmf_preamble->bits.char_set, false);
+    putValue(ui->fontHeader, 1, 1, ibmfPreamble->face_count,    false);
+    putValue(ui->fontHeader, 2, 1, ibmfPreamble->bits.version,  false);
+    putValue(ui->fontHeader, 3, 1, ibmfPreamble->bits.char_set, false);
 
-    for (int i = 0; i < ibmf_preamble->face_count; i++) {
-      IBMFFont::FaceHeader * face_header = ibmf_font->get_face_header(i);
+    for (int i = 0; i < ibmfPreamble->face_count; i++) {
+      IBMFFont::FaceHeader * face_header = ibmfFont->get_face_header(i);
       ui->faceIndex->addItem(QString::number(face_header->point_size).append(" pts"));
     }
 
@@ -223,12 +227,12 @@ bool MainWindow::loadFont()
     faceChanged = false;
     glyphChanged = false;
   }
-  return ibmf_font->is_initialized();
+  return ibmfFont->is_initialized();
 }
 
 void MainWindow::saveFace()
 {
-  if ((ibmf_font != nullptr) && ibmf_font->is_initialized() && faceChanged) {
+  if ((ibmfFont != nullptr) && ibmfFont->is_initialized() && faceChanged) {
     IBMFFont::FaceHeader face_header;
 
     face_header.point_size         = getValue(ui->faceHeader,  0, 1).toUInt();
@@ -243,7 +247,7 @@ void MainWindow::saveFace()
     face_header.lig_kern_pgm_count = getValue(ui->faceHeader,  9, 1).toUInt();
     face_header.kern_count         = getValue(ui->faceHeader, 10, 1).toUInt();
 
-    ibmf_font->save_face_header(ibmf_face_idx, &face_header);
+    ibmfFont->save_face_header(ibmfFaceIdx, &face_header);
     faceChanged = false;
   }
 }
@@ -251,24 +255,28 @@ void MainWindow::saveFace()
 bool MainWindow::loadFace(uint8_t face_idx)
 {
   saveFace();
-  if ((ibmf_font != nullptr) && (ibmf_font->is_initialized()) && (face_idx < ibmf_preamble->face_count)) {
-    ibmf_face_header = ibmf_font->get_face_header(face_idx);
+  if ((ibmfFont != nullptr) && (ibmfFont->is_initialized()) && (face_idx < ibmfPreamble->face_count)) {
+    ibmfFaceHeader = ibmfFont->get_face_header(face_idx);
 
-    putValue(ui->faceHeader,  0, 1, ibmf_face_header->point_size,                       false);
-    putValue(ui->faceHeader,  1, 1, ibmf_face_header->line_height);
-    putValue(ui->faceHeader,  2, 1, ibmf_face_header->dpi);
-    putFix16Value(ui->faceHeader,  3, 1, (float) ibmf_face_header->x_height / 64.0);
-    putFix16Value(ui->faceHeader,  4, 1, (float) ibmf_face_header->em_size / 64.0);
-    putFix16Value(ui->faceHeader,  5, 1, (float) ibmf_face_header->slant_correction / 64.0);
-    putValue(ui->faceHeader,  6, 1, ibmf_face_header->descender_height);
-    putValue(ui->faceHeader,  7, 1, ibmf_face_header->space_size);
-    putValue(ui->faceHeader,  8, 1, ibmf_face_header->glyph_count,                      false);
-    putValue(ui->faceHeader,  9, 1, ibmf_face_header->lig_kern_pgm_count,               false);
-    putValue(ui->faceHeader, 10, 1, ibmf_face_header->kern_count,                       false);
+    faceReloading = true;
 
-    ibmf_face_idx = face_idx;
+    putValue(ui->faceHeader,  0, 1, ibmfFaceHeader->point_size,                       false);
+    putValue(ui->faceHeader,  1, 1, ibmfFaceHeader->line_height);
+    putValue(ui->faceHeader,  2, 1, ibmfFaceHeader->dpi);
+    putFix16Value(ui->faceHeader,  3, 1, (float) ibmfFaceHeader->x_height / 64.0);
+    putFix16Value(ui->faceHeader,  4, 1, (float) ibmfFaceHeader->em_size / 64.0);
+    putFix16Value(ui->faceHeader,  5, 1, (float) ibmfFaceHeader->slant_correction / 64.0);
+    putValue(ui->faceHeader,  6, 1, ibmfFaceHeader->descender_height);
+    putValue(ui->faceHeader,  7, 1, ibmfFaceHeader->space_size);
+    putValue(ui->faceHeader,  8, 1, ibmfFaceHeader->glyph_count,                      false);
+    putValue(ui->faceHeader,  9, 1, ibmfFaceHeader->lig_kern_pgm_count,               false);
+    putValue(ui->faceHeader, 10, 1, ibmfFaceHeader->kern_count,                       false);
 
-    loadGlyph(ibmf_glyph_code);
+    faceReloading = false;
+
+    ibmfFaceIdx = face_idx;
+
+    loadGlyph(ibmfGlyphCode);
   }
   else {
     return false;
@@ -279,7 +287,7 @@ bool MainWindow::loadFace(uint8_t face_idx)
 
 void MainWindow::saveGlyph()
 {
-  if ((ibmf_font != nullptr) && ibmf_font->is_initialized() && glyphChanged) {
+  if ((ibmfFont != nullptr) && ibmfFont->is_initialized() && glyphChanged) {
     uint8_t * theBitmap;
     Dim theDim;
     IBMFFont::GlyphInfo glyph_info;
@@ -296,7 +304,7 @@ void MainWindow::saveGlyph()
       glyph_info.glyph_metric.dyn_f          = getValue(ui->characterMetrics,  8, 1).toUInt();
       glyph_info.glyph_metric.first_is_black = getValue(ui->characterMetrics,  9, 1).toUInt();
 
-      ibmf_font->save_glyph(ibmf_face_idx, ibmf_glyph_code, &glyph_info, theBitmap);
+      ibmfFont->save_glyph(ibmfFaceIdx, ibmfGlyphCode, &glyph_info, theBitmap);
       glyphChanged = false;
     }
   }
@@ -305,53 +313,56 @@ void MainWindow::saveGlyph()
 bool MainWindow::loadGlyph(uint16_t glyph_code)
 {
   saveGlyph();
-  if ((ibmf_font != nullptr) &&
-      (ibmf_font->is_initialized()) &&
-      (ibmf_face_idx < ibmf_preamble->face_count) &&
-      (glyph_code < ibmf_face_header->glyph_count)) {
+  if ((ibmfFont != nullptr) &&
+      (ibmfFont->is_initialized()) &&
+      (ibmfFaceIdx < ibmfPreamble->face_count) &&
+      (glyph_code < ibmfFaceHeader->glyph_count)) {
 
-    if (ibmf_font->get_glyph(ibmf_face_idx, glyph_code, &ibmf_glyph_info, &ibmf_glyph_bitmap)) {
-      ibmf_glyph_code = glyph_code;
+    if (ibmfFont->get_glyph(ibmfFaceIdx, glyph_code, &ibmfGlyphInfo, &ibmfGlyphBitmap)) {
+      ibmfGlyphCode = glyph_code;
 
       glyphChanged = false;
+      glyphReloading = true;
 
-      putValue(ui->characterMetrics,  0, 1, ibmf_glyph_info->char_code,                   false);
-      putValue(ui->characterMetrics,  1, 1, ibmf_glyph_info->bitmap_width,                false);
-      putValue(ui->characterMetrics,  2, 1, ibmf_glyph_info->bitmap_height,               false);
-      putValue(ui->characterMetrics,  3, 1, ibmf_glyph_info->horizontal_offset);
-      putValue(ui->characterMetrics,  4, 1, ibmf_glyph_info->vertical_offset);
-      putValue(ui->characterMetrics,  5, 1, ibmf_glyph_info->lig_kern_pgm_index,          false);
-      putValue(ui->characterMetrics,  6, 1, ibmf_glyph_info->packet_length,               false);
-      putFix16Value(ui->characterMetrics,  7, 1, (float) ibmf_glyph_info->advance / 64.0);
-      putValue(ui->characterMetrics,  8, 1, ibmf_glyph_info->glyph_metric.dyn_f,          false);
-      putValue(ui->characterMetrics,  9, 1, ibmf_glyph_info->glyph_metric.first_is_black, false);
+      putValue(ui->characterMetrics,  0, 1, ibmfGlyphInfo->char_code,                   false);
+      putValue(ui->characterMetrics,  1, 1, ibmfGlyphInfo->bitmap_width,                false);
+      putValue(ui->characterMetrics,  2, 1, ibmfGlyphInfo->bitmap_height,               false);
+      putValue(ui->characterMetrics,  3, 1, ibmfGlyphInfo->horizontal_offset);
+      putValue(ui->characterMetrics,  4, 1, ibmfGlyphInfo->vertical_offset);
+      putValue(ui->characterMetrics,  5, 1, ibmfGlyphInfo->lig_kern_pgm_index,          false);
+      putValue(ui->characterMetrics,  6, 1, ibmfGlyphInfo->packet_length,               false);
+      putFix16Value(ui->characterMetrics,  7, 1, (float) ibmfGlyphInfo->advance / 64.0);
+      putValue(ui->characterMetrics,  8, 1, ibmfGlyphInfo->glyph_metric.dyn_f,          false);
+      putValue(ui->characterMetrics,  9, 1, ibmfGlyphInfo->glyph_metric.first_is_black, false);
 
-      bitmapRenderer->loadBitmap(ibmf_glyph_bitmap, Dim(ibmf_glyph_info->bitmap_width, ibmf_glyph_info->bitmap_height));
-      smallGlyph->loadBitmap(ibmf_glyph_bitmap, Dim(ibmf_glyph_info->bitmap_width, ibmf_glyph_info->bitmap_height));
-      largeGlyph->loadBitmap(ibmf_glyph_bitmap, Dim(ibmf_glyph_info->bitmap_width, ibmf_glyph_info->bitmap_height));
+      bitmapRenderer->clearAndLoadBitmap(ibmfGlyphBitmap, Dim(ibmfGlyphInfo->bitmap_width, ibmfGlyphInfo->bitmap_height));
+      smallGlyph->clearAndLoadBitmap(ibmfGlyphBitmap, Dim(ibmfGlyphInfo->bitmap_width, ibmfGlyphInfo->bitmap_height));
+      largeGlyph->clearAndLoadBitmap(ibmfGlyphBitmap, Dim(ibmfGlyphInfo->bitmap_width, ibmfGlyphInfo->bitmap_height));
 
       ui->ligTable->clearContents();
       ui->kernTable->clearContents();
 
 // TBD: Lig/Kern formatting issue
 //
-//      if (ibmf_font->get_glyph_lig_kern(ibmf_face_idx, ibmf_glyph_code, &ibmf_lig_kerns)) {
-//        ui->ligTable->setRowCount(ibmf_lig_kerns->lig_steps.size());
-//        for (int i = 0; i < ibmf_lig_kerns->lig_steps.size(); i++) {
-//          putValue(ui->ligTable, i, 0, ibmf_lig_kerns->lig_steps[i].next_char_code);
-//          putValue(ui->ligTable, i, 1, ibmf_lig_kerns->lig_steps[i].char_code);
-//          ui->ligTable->item(i, 0)->setToolTip(QChar(characterCodes[ibmf_lig_kerns->lig_steps[i].next_char_code]));
-//          ui->ligTable->item(i, 1)->setToolTip(QChar(characterCodes[ibmf_lig_kerns->lig_steps[i].char_code]));
+//      if (ibmfFont->get_glyph_lig_kern(ibmfFaceIdx, ibmfGlyphCode, &ibmfLigKerns)) {
+//        ui->ligTable->setRowCount(ibmfLigKerns->lig_steps.size());
+//        for (int i = 0; i < ibmfLigKerns->lig_steps.size(); i++) {
+//          putValue(ui->ligTable, i, 0, ibmfLigKerns->lig_steps[i].next_char_code);
+//          putValue(ui->ligTable, i, 1, ibmfLigKerns->lig_steps[i].char_code);
+//          ui->ligTable->item(i, 0)->setToolTip(QChar(characterCodes[ibmfLigKerns->lig_steps[i].next_char_code]));
+//          ui->ligTable->item(i, 1)->setToolTip(QChar(characterCodes[ibmfLigKerns->lig_steps[i].char_code]));
 //        }
-//        ui->kernTable->setRowCount(ibmf_lig_kerns->kern_steps.size());
-//        for (int i = 0; i < ibmf_lig_kerns->kern_steps.size(); i++) {
-//          putValue(ui->kernTable, i, 0, ibmf_lig_kerns->kern_steps[i].next_char_code);
-//          putFix16Value(ui->kernTable, i, 1, (float) ibmf_lig_kerns->kern_steps[i].kern / 64.0);
-//          ui->kernTable->item(i, 0)->setToolTip(QChar(characterCodes[ibmf_lig_kerns->kern_steps[i].next_char_code]));
+//        ui->kernTable->setRowCount(ibmfLigKerns->kern_steps.size());
+//        for (int i = 0; i < ibmfLigKerns->kern_steps.size(); i++) {
+//          putValue(ui->kernTable, i, 0, ibmfLigKerns->kern_steps[i].next_char_code);
+//          putFix16Value(ui->kernTable, i, 1, (float) ibmfLigKerns->kern_steps[i].kern / 64.0);
+//          ui->kernTable->item(i, 0)->setToolTip(QChar(characterCodes[ibmfLigKerns->kern_steps[i].next_char_code]));
 //        }
 //      }
 
       ui->charactersList->setCurrentCell(glyph_code / 5, glyph_code % 5);
+
+      glyphReloading = false;
     }
     else {
       return false;
@@ -366,15 +377,15 @@ bool MainWindow::loadGlyph(uint16_t glyph_code)
 
 void MainWindow::on_leftButton_clicked()
 {
-  if ((ibmf_font == nullptr) || !ibmf_font->is_initialized()) return;
+  if ((ibmfFont == nullptr) || !ibmfFont->is_initialized()) return;
 
-  uint16_t glyph_code = ibmf_glyph_code;
+  uint16_t glyph_code = ibmfGlyphCode;
 
   if (glyph_code > 0) {
     glyph_code -= 1;
   }
   else {
-    glyph_code = ibmf_face_header->glyph_count - 1;
+    glyph_code = ibmfFaceHeader->glyph_count - 1;
   }
   loadGlyph(glyph_code);
 }
@@ -382,23 +393,23 @@ void MainWindow::on_leftButton_clicked()
 
 void MainWindow::on_rightButton_clicked()
 {
-  if ((ibmf_font == nullptr) || !ibmf_font->is_initialized()) return;
+  if ((ibmfFont == nullptr) || !ibmfFont->is_initialized()) return;
 
-  uint16_t glyph_code = ibmf_glyph_code;
+  uint16_t glyphCode = ibmfGlyphCode;
 
-  if (glyph_code >= ibmf_face_header->glyph_count - 1) {
-    glyph_code = 0;
+  if (glyphCode >= ibmfFaceHeader->glyph_count - 1) {
+    glyphCode = 0;
   }
   else {
-    glyph_code += 1;
+    glyphCode += 1;
   }
-  loadGlyph(glyph_code);
+  loadGlyph(glyphCode);
 }
 
 
 void MainWindow::on_faceIndex_currentIndexChanged(int index)
 {
-  if ((ibmf_font == nullptr) || !ibmf_font->is_initialized()) return;
+  if ((ibmfFont == nullptr) || !ibmfFont->is_initialized()) return;
 
   loadFace(index);
 }
@@ -412,17 +423,17 @@ void MainWindow::on_pixelSize_valueChanged(int value)
 void MainWindow::on_charactersList_cellClicked(int row, int column)
 {
   int idx = (row * 5) + column;
-  if (ibmf_font != nullptr) {
+  if (ibmfFont != nullptr) {
     loadGlyph(idx);
   }
   else {
-    ibmf_glyph_code = idx; // Retain the selection for when a font will be loaded
+    ibmfGlyphCode = idx; // Retain the selection for when a font will be loaded
   }
 }
 
 void MainWindow::on_characterMetrics_cellChanged(int row, int column)
 {
-  if ((ibmf_font != nullptr) && ibmf_font->is_initialized() && initialized) {
+  if ((ibmfFont != nullptr) && ibmfFont->is_initialized() && initialized && !glyphReloading) {
     glyphChanged = true;
   }
 }
@@ -430,7 +441,7 @@ void MainWindow::on_characterMetrics_cellChanged(int row, int column)
 
 void MainWindow::on_faceHeader_cellChanged(int row, int column)
 {
-  if ((ibmf_font != nullptr) && ibmf_font->is_initialized() && initialized) {
+  if ((ibmfFont != nullptr) && ibmfFont->is_initialized() && initialized && !faceReloading) {
     faceChanged = true;
   }
 
@@ -446,7 +457,7 @@ void MainWindow::on_glyphForgetButton_clicked()
             QMessageBox::Yes|QMessageBox::No);
     if (button == QMessageBox::Yes) {
       glyphChanged = false;
-      loadGlyph(ibmf_glyph_code);
+      loadGlyph(ibmfGlyphCode);
     }
   }
 }
@@ -461,7 +472,7 @@ void MainWindow::on_faceForgetButton_clicked()
             QMessageBox::Yes|QMessageBox::No);
     if (button == QMessageBox::Yes) {
       faceChanged = false;
-      loadFace(ibmf_face_idx);
+      loadFace(ibmfFaceIdx);
     }
   }
 

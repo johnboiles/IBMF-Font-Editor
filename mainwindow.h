@@ -48,25 +48,28 @@ private:
   Ui::MainWindow *ui;
   QString currentFilename;
   QFile file;
+
   bool fontChanged;
   bool faceChanged;
   bool glyphChanged;
   bool initialized;
+  bool glyphReloading;
+  bool faceReloading;
 
   BitmapRenderer * bitmapRenderer;
   BitmapRenderer * smallGlyph;
   BitmapRenderer * largeGlyph;
 
-  IBMFFont             * ibmf_font;
-  IBMFFont::Preamble   * ibmf_preamble;
-  IBMFFont::FaceHeader * ibmf_face_header;
-  IBMFFont::GlyphInfo  * ibmf_glyph_info;
-  uint8_t              * ibmf_glyph_bitmap;
+  IBMFFont             * ibmfFont;
+  IBMFFont::Preamble   * ibmfPreamble;
+  IBMFFont::FaceHeader * ibmfFaceHeader;
+  IBMFFont::GlyphInfo  * ibmfGlyphInfo;
+  uint8_t              * ibmfGlyphBitmap;
 
-  IBMFFont::GlyphLigKern * ibmf_lig_kerns;
+  IBMFFont::GlyphLigKern * ibmfLigKerns;
 
-  int ibmf_face_idx;
-  int ibmf_glyph_code;
+  int ibmfFaceIdx;
+  int ibmfGlyphCode;
 
   bool checkFontChanged();
   bool loadFont();
