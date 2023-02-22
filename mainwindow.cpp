@@ -211,7 +211,7 @@ bool MainWindow::loadFont()
     memcpy(marker, ibmfPreamble->marker, 4);
     marker[4] = 0;
 
-    putValue(ui->fontHeader, 0, 1, marker,                       false);
+    putValue(ui->fontHeader, 0, 1, QByteArray(marker),                       false);
     putValue(ui->fontHeader, 1, 1, ibmfPreamble->face_count,    false);
     putValue(ui->fontHeader, 2, 1, ibmfPreamble->bits.version,  false);
     putValue(ui->fontHeader, 3, 1, ibmfPreamble->bits.char_set, false);
